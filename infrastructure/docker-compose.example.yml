@@ -1,0 +1,157 @@
+# Kuali Leal - Development Environment
+# Docker Compose configuration for local development
+#
+# IMPORTANT: This is a sanitized example. Production credentials have been removed.
+# Copy this file to `docker-compose.yml` and fill in your own credentials.
+
+version: '3.8'
+
+services:
+  # ─── Database 01: Identity & Transactions ──────────────────────────────────
+  mysql-db01:
+    image: mysql:8.0
+    container_name: kuali-db01-identity
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: your_root_password_here
+      MYSQL_DATABASE: bdKualiLealApp01
+      MYSQL_USER: developer
+      MYSQL_PASSWORD: your_dev_password_here
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_db01_data:/var/lib/mysql
+      - ./init-scripts/db01:/docker-entrypoint-initdb.d
+    command:
+      - --default-authentication-plugin=mysql_native_password
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    networks:
+      - kuali-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── Database 02: Multi-tenant Business Data ───────────────────────────────
+  mysql-db02:
+    image: mysql:8.0
+    container_name: kuali-db02-business
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: your_root_password_here
+      MYSQL_DATABASE: bdKualiLealApp02
+      MYSQL_USER: developer
+      MYSQL_PASSWORD: your_dev_password_here
+    ports:
+      - "3307:3306"  # Different host port to avoid conflict
+    volumes:
+      - mysql_db02_data:/var/lib/mysql
+      - ./init-scripts/db02:/docker-entrypoint-initdb.d
+    command:
+      - --default-authentication-plugin=mysql_native_password
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    networks:
+      - kuali-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── Next.js Application Server ────────────────────────────────────────────
+  nextjs-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kuali-nextjs-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # Database Connections
+      DATABASE_URL_01: "mysql://developer:your_dev_password_here@mysql-db01:3306/bdKualiLealApp01"
+      DATABASE_URL_02: "mysql://developer:your_dev_password_here@mysql-db02:3306/bdKualiLealApp02"
+
+      # Authentication
+      JWT_SECRET: "your-secure-jwt-secret-min-32-characters-long"
+
+      # Stripe (Use test keys for development)
+      STRIPE_SECRET_KEY: "sk_test_YOUR_TEST_SECRET_KEY"
+      STRIPE_WEBHOOK_SECRET: "whsec_YOUR_WEBHOOK_SECRET"
+      NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: "pk_test_YOUR_TEST_PUBLISHABLE_KEY"
+
+      # Application
+      NODE_ENV: development
+      NEXT_TELEMETRY_DISABLED: 1
+    volumes:
+      - ./src:/app/src
+      - ./public:/app/public
+      - ./node_modules:/app/node_modules
+    depends_on:
+      mysql-db01:
+        condition: service_healthy
+      mysql-db02:
+        condition: service_healthy
+    networks:
+      - kuali-network
+    command: npm run dev
+
+  # ─── Redis Cache (Optional - for session storage scaling) ─────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: kuali-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - kuali-network
+    command: redis-server --appendonly yes
+
+  # ─── Adminer (Database Management UI) ──────────────────────────────────────
+  adminer:
+    image: adminer:latest
+    container_name: kuali-adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: mysql-db01
+    networks:
+      - kuali-network
+    depends_on:
+      - mysql-db01
+      - mysql-db02
+
+# ─── Volumes ──────────────────────────────────────────────────────────────────
+volumes:
+  mysql_db01_data:
+    driver: local
+  mysql_db02_data:
+    driver: local
+  redis_data:
+    driver: local
+
+# ─── Networks ─────────────────────────────────────────────────────────────────
+networks:
+  kuali-network:
+    driver: bridge
+
+# ─── Usage Instructions ───────────────────────────────────────────────────────
+# 1. Copy this file: cp docker-compose.example.yml docker-compose.yml
+# 2. Update all environment variables with your credentials
+# 3. Create init-scripts directories if you have seed data:
+#    mkdir -p init-scripts/db01 init-scripts/db02
+# 4. Start services: docker-compose up -d
+# 5. Run Prisma migrations:
+#    docker-compose exec nextjs-app npx prisma migrate deploy
+# 6. Access application:
+#    - Next.js App: http://localhost:3000
+#    - Adminer (DB UI): http://localhost:8080
+#    - Redis: localhost:6379
+# 7. View logs: docker-compose logs -f nextjs-app
+# 8. Stop services: docker-compose down
