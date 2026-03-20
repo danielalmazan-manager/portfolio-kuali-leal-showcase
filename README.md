@@ -365,7 +365,7 @@ Thank you for your interest in my work on Kuali Leal. While the complete source 
 
 ## 📝 License & Usage
 
-© 2024-2026 Daniel [Last Name]. All rights reserved.
+© 2024-2026 Daniel Almazan. All rights reserved.
 
 This repository is for **demonstration and portfolio purposes only**. The code snippets and documentation are provided to showcase technical capabilities to potential employers. **No license is granted for commercial use, modification, or distribution** of any materials in this repository.
 
